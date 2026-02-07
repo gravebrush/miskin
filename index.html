@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<title>deli icadı</title>
+
+<style>
+html,body{
+  margin:0;
+  padding:0;
+  overflow:hidden;
+  background: linear-gradient(180deg,#0b3d2e 0%,#06261d 100%);
+  font-family: system-ui, sans-serif;
+  height:100%;
+}
+
+/* Büyük, saydam arka plan harfi */
+#bgLetter{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:0; /* canvas üstte olacak */
+  pointer-events:none;
+  user-select:none;
+  mix-blend-mode: normal;
+}
+#bgLetter .letter{
+  /* responsive, ekrana sığsın ama büyük olsun */
+  font-weight:900;
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+  font-size: clamp(180px, 40vmin, 900px);
+  line-height:1;
+  letter-spacing: -0.02em;
+  color: rgba(255,255,255,0.06); /* saydam beyaz dolgu */
+  -webkit-text-stroke: 2px rgba(0,0,0,0.22); /* koyu kontur, kontrast sağlar */
+  text-shadow:
+    0 6px 18px rgba(0,0,0,0.25),
+    0 1px 0 rgba(255,255,255,0.01);
+  transform: translateY(2%);
+}
+
+/* canvas ve menü z-index ayarları */
+canvas{
+  display:block;
+  position:relative;
+  z-index:1;
+}
+
+/* Menü */
+#menu{
+  position:fixed;
+  top:14px;
+  left:14px;
+  z-index:10;
+  background: rgba(10,45,35,.75);
+  backdrop-filter: blur(6px);
+  color:#caffea;
+  padding:12px 14px;
+  border-radius:12px;
+  box-shadow:0 10px 25px rgba(0,0,0,.35);
+  font-size:13px;
+  min-width:180px;
+}
+
+#menu h4{
+  margin:0 0 8px 0;
+  font-weight:600;
+  font-size:13px;
+  color:#7af3c8;
+}
+
+.menu-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-top:8px;
+  gap:10px;
+}
+
+.menu-row input[type="checkbox"]{
+  accent-color:#2ee6a6;
+}
+
+.menu-row input[type="color"]{
+  width:32px;
+  height:20px;
+  border:none;
+  background:none;
+  padding:0;
+  cursor:pointer;
+}
+
+.menu-row input[type="range"]{
+  width:90px;
+}
+</style>
+</head>
+<body>
+
+<!-- Büyük arka plan harfi -->
+<div id="bgLetter" aria-hidden="true">
+  <div class="letter">E</div>
+</div>
+
+<div id="menu">
+  <h4>Rain Forest Menu</h4>
+
+  <div class="menu-row">
+    <span>Kalp izi</span>
+    <input type="checkbox" id="trailToggle" checked>
+  </div>
+
+  <div class="menu-row">
+    <span>Idle bloom</span>
+    <input type="checkbox" id="idleToggle" checked>
+  </div>
+
+  <div class="menu-row">
+    <span>Kalp rengi</span>
+    <input type="color" id="colorPicker" value="#6d3c03">
+  </div>
+
+  <div class="menu-row">
+    <span>Arka plan</span>
+    <input type="color" id="bgPicker" value="#0b3d2e">
+  </div>
+
+  <div class="menu-row">
+    <span>Desen boyutu</span>
+    <input type="range" id="sizeSlider" min="5" max="25" value="10">
+  </div>
+</div>
+
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+
+let rainMode = false;
+let rainTimer = 0;
+
+let w,h;
+function resize(){
+  w = canvas.width = window.innerWidth;
+  h = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize",resize);
+
+const trailToggle = document.getElementById("trailToggle");
+const idleToggle  = document.getElementById("idleToggle");
+const colorPicker = document.getElementById("colorPicker");
+const bgPicker    = document.getElementById("bgPicker");
+const sizeSlider  = document.getElementById("sizeSlider");
+
+let heartColor = colorPicker.value;
+let sizeMul = sizeSlider.value / 10;
+
+let bgColor = bgPicker.value;
+document.body.style.background =
+  `linear-gradient(180deg, ${bgColor} 0%, #06261d 100%)`;
+
+colorPicker.addEventListener("input",()=>{
+  heartColor = colorPicker.value;
+});
+
+bgPicker.addEventListener("input",()=>{
+  bgColor = bgPicker.value;
+  document.body.style.background =
+    `linear-gradient(180deg, ${bgColor} 0%, #06261d 100%)`;
+});
+
+sizeSlider.addEventListener("input",()=>{
+  sizeMul = sizeSlider.value / 10;
+});
+
+const particles = [];
+
+const mouse = {
+  x: w/2,
+  y: h/2,
+  lastMove: Date.now()
+};
+
+document.addEventListener("mousemove",e=>{
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  mouse.lastMove = Date.now();
+
+  if(!trailToggle.checked) return;
+
+  for(let i=0;i<2;i++){
+    spawnHeart(mouse.x,mouse.y,false);
+  }
+});
+
+document.addEventListener("click",e=>{
+  for(let i=0;i<14;i++){
+    burst(e.clientX,e.clientY,2.5);
+  }
+});
+
+document.addEventListener("dblclick",e=>{
+  for(let i=0;i<35;i++){
+    burst(e.clientX,e.clientY,4.5);
+  }
+});
+
+document.addEventListener("keydown",e=>{
+  if(e.key === "Shift"){
+    rainMode = true;
+  }
+});
+
+document.addEventListener("keyup",e=>{
+  if(e.key === "Shift"){
+    rainMode = false;
+  }
+});
+
+function hexToRgb(hex){
+  const n = hex.replace('#','');
+  return {
+    r: parseInt(n.substring(0,2),16),
+    g: parseInt(n.substring(2,4),16),
+    b: parseInt(n.substring(4,6),16)
+  };
+}
+
+function spawnHeart(x,y,idle){
+  particles.push({
+    x,
+    y,
+    vx: (Math.random()-0.5)*(idle?0.3:1.8),
+    vy: idle ? -0.6-Math.random()*0.6 : -Math.random()*1.2,
+    size: (idle ? 10+Math.random()*6 : 8+Math.random()*6) * sizeMul,
+    life: idle ? 140 : 90,
+    idle,
+
+    rot: Math.random()*Math.PI*2,
+    rotSpd:(Math.random()-0.5)*0.04
+  });
+}
+
+function burst(x,y,power){
+  particles.push({
+    x,
+    y,
+    vx:(Math.random()-0.5)*power*3,
+    vy:(Math.random()-0.5)*power*3,
+    size:(8+Math.random()*8)*sizeMul,
+    life:110,
+    idle:false,
+
+    rot: Math.random()*Math.PI*2,
+    rotSpd:(Math.random()-0.5)*0.08
+  });
+}
+
+function drawHeart(x,y,s){
+  ctx.beginPath();
+  const t = s*0.3;
+  ctx.moveTo(x, y + t);
+  ctx.bezierCurveTo(x, y, x - s/2, y, x - s/2, y + t);
+  ctx.bezierCurveTo(x - s/2, y + s/1.5, x, y + s/1.2, x, y + s);
+  ctx.bezierCurveTo(x, y + s/1.2, x + s/2, y + s/1.5, x + s/2, y + t);
+  ctx.bezierCurveTo(x + s/2, y, x, y, x, y + t);
+  ctx.closePath();
+  ctx.fill();
+}
+
+const idleDelay = 700;
+let idleTimer = 0;
+
+function loop(){
+  ctx.clearRect(0,0,w,h);
+
+  const now = Date.now();
+  const idle = now - mouse.lastMove > idleDelay;
+
+  if(idle && idleToggle.checked){
+    idleTimer++;
+    if(idleTimer % 8 === 0){
+      spawnHeart(
+        mouse.x + (Math.random()-0.5)*18,
+        mouse.y + (Math.random()-0.5)*10,
+        true
+      );
+    }
+  }else{
+    idleTimer = 0;
+  }
+
+  if(rainMode){
+    rainTimer++;
+    if(rainTimer % 3 === 0){
+      spawnHeart(Math.random()*w,-20,false);
+      const p = particles[particles.length-1];
+      p.vy = 1.5 + Math.random()*2;
+      p.idle = false;
+    }
+  }
+
+  const rgb = hexToRgb(heartColor);
+
+  // kalpler arası bağ çizgileri
+  for(let i=0;i<particles.length;i++){
+    for(let j=i+1;j<particles.length;j++){
+      const a = particles[i];
+      const b = particles[j];
+
+      if(a.life < 5 || b.life < 5) continue;
+
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const d  = Math.sqrt(dx*dx + dy*dy);
+
+      if(d < 60){
+        const alpha = (1 - d/60) * 0.12;
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+        ctx.lineWidth = 1;
+        ctx.moveTo(a.x,a.y);
+        ctx.lineTo(b.x,b.y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // mouse glow halkası
+  ctx.beginPath();
+  ctx.strokeStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`;
+  ctx.lineWidth = 2;
+  ctx.arc(mouse.x, mouse.y, 18, 0, Math.PI*2);
+  ctx.stroke();
+
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    if(!p.idle){
+      p.vy += 0.02;
+    }
+
+    p.life--;
+
+    const alpha = Math.max(p.life/120,0);
+    ctx.fillStyle = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+
+    ctx.save();
+    ctx.translate(p.x,p.y);
+    ctx.rotate(p.rot);
+    drawHeart(0,0,p.size);
+    ctx.restore();
+
+    p.rot += p.rotSpd;
+
+    if(p.life<=0){
+      particles.splice(i,1);
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
